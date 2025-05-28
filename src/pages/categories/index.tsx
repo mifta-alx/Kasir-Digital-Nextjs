@@ -18,19 +18,22 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import { CATEGORIES, type Category } from "@/data/mock";
+import { type Category } from "@/data/mock";
 import { categoryFormSchema, type CategoryFormSchema } from "@/forms/category";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import type { NextPageWithLayout } from "../_app";
+import { api } from "@/utils/api";
 
 const CategoriesPage: NextPageWithLayout = () => {
+  const apiUtils = api.useUtils();
   const [createCategoryDialogOpen, setCreateCategoryDialogOpen] =
     useState(false);
   const [editCategoryDialogOpen, setEditCategoryDialogOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [categoryToEdit, setCategoryToEdit] = useState<string | null>(null);
 
   const createCategoryForm = useForm<CategoryFormSchema>({
     resolver: zodResolver(categoryFormSchema),
@@ -40,17 +43,56 @@ const CategoriesPage: NextPageWithLayout = () => {
     resolver: zodResolver(categoryFormSchema),
   });
 
+  const { data: categories } = api.category.getCategories.useQuery();
+  const { mutate: createCategory } = api.category.createCategory.useMutation({
+    onSuccess: async () => {
+      await apiUtils.category.getCategories.invalidate();
+      alert("Category succeessfully created!");
+      setCreateCategoryDialogOpen(false);
+      createCategoryForm.reset();
+    },
+  });
+  const { mutate: editCategory } = api.category.editCategory.useMutation({
+    onSuccess: async () => {
+      await apiUtils.category.getCategories.invalidate();
+      alert("Category succeessfully updated!");
+      setEditCategoryDialogOpen(false);
+      editCategoryForm.reset();
+      setCategoryToEdit(null);
+    },
+  });
+  const { mutate: deleteCategoryById } =
+    api.category.deleteCategoryById.useMutation({
+      onSuccess: async () => {
+        await apiUtils.category.getCategories.invalidate();
+        alert("Category succeessfully deleted!");
+        setCategoryToDelete(null);
+      },
+      onError: (error) => {
+        console.error("Error creating category:", error);
+        alert("Gagal membuat kategori: " + error.message);
+      },
+    });
+
   const handleSubmitCreateCategory = (data: CategoryFormSchema) => {
-    console.log(data);
+    createCategory({
+      name: data.name,
+    });
   };
 
   const handleSubmitEditCategory = (data: CategoryFormSchema) => {
-    console.log(data);
+    if (!categoryToEdit) {
+      return;
+    }
+    editCategory({
+      name: data.name,
+      categoryId: categoryToEdit,
+    });
   };
 
   const handleClickEditCategory = (category: Category) => {
     setEditCategoryDialogOpen(true);
-
+    setCategoryToEdit(category.id);
     editCategoryForm.reset({
       name: category.name,
     });
@@ -59,7 +101,14 @@ const CategoriesPage: NextPageWithLayout = () => {
   const handleClickDeleteCategory = (categoryId: string) => {
     setCategoryToDelete(categoryId);
   };
-
+  const handleConfirmDeleteCategory = () => {
+    if (!categoryToDelete) {
+      return;
+    }
+    deleteCategoryById({
+      categoryId: categoryToDelete,
+    });
+  };
   return (
     <>
       <DashboardHeader>
@@ -105,7 +154,7 @@ const CategoriesPage: NextPageWithLayout = () => {
       </DashboardHeader>
 
       <div>
-        {CATEGORIES.length === 0 ? (
+        {categories?.length === 0 ? (
           <div className="rounded-md border">
             <div className="p-8 text-center">
               <p className="text-muted-foreground">No categories found</p>
@@ -116,15 +165,17 @@ const CategoriesPage: NextPageWithLayout = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {CATEGORIES.filter((cat) => cat.id !== "all").map((category) => (
-              <CategoryCatalogCard
-                key={category.id}
-                name={category.name}
-                productCount={category.count}
-                onEdit={() => handleClickEditCategory(category)}
-                onDelete={() => handleClickDeleteCategory(category.id)}
-              />
-            ))}
+            {categories
+              ?.filter((cat) => cat.id !== "all")
+              .map((category) => (
+                <CategoryCatalogCard
+                  key={category.id}
+                  name={category.name}
+                  productCount={category.productCount}
+                  onEdit={() => handleClickEditCategory(category)}
+                  onDelete={() => handleClickDeleteCategory(category.id)}
+                />
+              ))}
           </div>
         )}
       </div>
@@ -173,7 +224,9 @@ const CategoriesPage: NextPageWithLayout = () => {
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button variant="destructive">Delete</Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteCategory}>
+              Delete
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
